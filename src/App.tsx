@@ -32,7 +32,12 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [isEditing, setIsEditing] = useState<Demo | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
-  const [formData, setFormData] = useState({ name: '', genre: 'pop', url: '' });
+  const [formData, setFormData] = useState({ name: '', genre: 'pop' });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  
+  const [activeAudio, setActiveAudio] = useState<string | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
   useEffect(() => {
     checkAuth();
@@ -44,6 +49,24 @@ export default function App() {
       if (user.role === 'user') fetchFavorites();
     }
   }, [user, sortOrder]);
+
+  const togglePlay = (url: string) => {
+    if (activeAudio === url) {
+      if (isPlaying) {
+        audioRef.current?.pause();
+      } else {
+        audioRef.current?.play();
+      }
+      setIsPlaying(!isPlaying);
+    } else {
+      setActiveAudio(url);
+      setIsPlaying(true);
+      if (audioRef.current) {
+        audioRef.current.src = url;
+        audioRef.current.play();
+      }
+    }
+  };
 
   const checkAuth = async () => {
     try {
@@ -73,13 +96,10 @@ export default function App() {
   };
 
   const handleLogin = async (role: 'admin' | 'user') => {
-    // For demo purposes, we use hardcoded credentials
     const credentials = role === 'admin' 
       ? { username: 'admin', password: 'admin123', role: 'admin' }
       : { username: 'user1', password: 'password123', role: 'user' };
 
-    // In a real app, we'd have a proper login form. 
-    // Here we'll just simulate or use a simple prompt for the demo.
     const res = await fetch('/api/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -115,17 +135,22 @@ export default function App() {
     const method = isEditing ? 'PUT' : 'POST';
     const url = isEditing ? `/api/demos/${isEditing.id}` : '/api/demos';
     
+    const data = new FormData();
+    data.append('name', formData.name);
+    data.append('genre', formData.genre);
+    if (selectedFile) data.append('file', selectedFile);
+    
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(formData)
+      body: data
     });
 
     if (res.ok) {
       fetchDemos();
       setShowAddModal(false);
       setIsEditing(null);
-      setFormData({ name: '', genre: 'pop', url: '' });
+      setFormData({ name: '', genre: 'pop' });
+      setSelectedFile(null);
     }
   };
 
@@ -269,7 +294,8 @@ export default function App() {
                     <button 
                       onClick={() => {
                         setIsEditing(null);
-                        setFormData({ name: '', genre: 'pop', url: '' });
+                        setFormData({ name: '', genre: 'pop' });
+                        setSelectedFile(null);
                         setShowAddModal(true);
                       }}
                       className="p-2.5 bg-emerald-500 text-black rounded-xl hover:bg-emerald-400 transition-all shadow-lg"
@@ -299,7 +325,8 @@ export default function App() {
                             <button 
                               onClick={() => {
                                 setIsEditing(demo);
-                                setFormData({ name: demo.name, genre: demo.genre, url: demo.url });
+                                setFormData({ name: demo.name, genre: demo.genre });
+                                setSelectedFile(null);
                                 setShowAddModal(true);
                               }}
                               className="p-2 hover:bg-white/10 rounded-lg text-white/40 hover:text-white transition-colors"
@@ -331,14 +358,16 @@ export default function App() {
                     </div>
 
                     <div className="mt-8 flex items-center gap-4">
-                      <button className="flex-1 py-3 bg-white/5 hover:bg-white/10 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2">
-                        <Play size={16} fill="currentColor" />
-                        Preview
+                      <button 
+                        onClick={() => togglePlay(demo.url)}
+                        className={`flex-1 py-3 rounded-xl font-bold text-sm transition-all flex items-center justify-center gap-2 ${activeAudio === demo.url && isPlaying ? 'bg-emerald-500 text-black' : 'bg-white/5 hover:bg-white/10'}`}
+                      >
+                        {activeAudio === demo.url && isPlaying ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
+                        {activeAudio === demo.url && isPlaying ? 'Playing' : 'Preview'}
                       </button>
                       <a 
                         href={demo.url} 
-                        target="_blank" 
-                        rel="noreferrer"
+                        download
                         className="p-3 glass hover:bg-white/10 rounded-xl transition-all"
                       >
                         <ChevronDown className="-rotate-90" size={18} />
@@ -404,15 +433,23 @@ export default function App() {
                     </select>
                   </div>
                   <div className="space-y-2">
-                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest ml-1">Storage URL</label>
-                    <input 
-                      required
-                      type="url" 
-                      value={formData.url}
-                      onChange={e => setFormData({...formData, url: e.target.value})}
-                      placeholder="https://..."
-                      className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 px-6 focus:outline-none focus:border-emerald-500/50 transition-colors"
-                    />
+                    <label className="text-[10px] font-bold text-white/40 uppercase tracking-widest ml-1">MP3 Recording</label>
+                    <div className="relative">
+                      <input 
+                        required={!isEditing}
+                        type="file" 
+                        accept=".mp3,audio/mpeg"
+                        onChange={e => setSelectedFile(e.target.files?.[0] || null)}
+                        className="hidden"
+                        id="file-upload"
+                      />
+                      <label 
+                        htmlFor="file-upload"
+                        className="w-full flex items-center justify-center gap-2 bg-white/5 border border-white/10 rounded-2xl py-4 px-6 cursor-pointer hover:bg-white/10 transition-colors truncate"
+                      >
+                        {selectedFile ? selectedFile.name : (isEditing ? 'Change File' : 'Upload MP3')}
+                      </label>
+                    </div>
                   </div>
                 </div>
 
@@ -436,6 +473,8 @@ export default function App() {
           </div>
         )}
       </AnimatePresence>
+
+      <audio ref={audioRef} onEnded={() => setIsPlaying(false)} className="hidden" />
 
       {/* Footer */}
       <footer className="border-t border-white/5 py-12 px-6">
